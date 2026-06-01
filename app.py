@@ -1613,355 +1613,202 @@ def page_upload():
 def page_list():
     st.subheader("📋 Danh sách SKKN trong hệ thống")
     records = get_all_records()
+    
     if not records:
         st.warning("Chưa có SKKN nào. Hãy nạp file ở tab 'Nạp File'.")
         return
 
+    # === THỐNG KÊ NHANH ===
     total = len(records)
     da_cham = sum(1 for r in records if r["trang_thai"] == "Đã chấm")
     dat = sum(1 for r in records if r["ket_qua"] == "Đạt")
     ds_da_cham = sum(1 for r in records if r.get("Deepseek_trang_thai") == "Đã chấm")
     ds_dat = sum(1 for r in records if r.get("Deepseek_ket_qua") == "Đạt")
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("📁 Tổng SKKN", total)
-    c2.metric("🤖 Claude đã chấm", da_cham)
-    c3.metric("🏆 Claude đạt", dat)
-    c4.metric("🟢 DeepSeek đã chấm", ds_da_cham)
-    c5.metric("🏆 DeepSeek đạt", ds_dat)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1.metric("📁 Tổng SKKN", total)
+    col2.metric("🤖 Claude đã chấm", da_cham)
+    col3.metric("🏆 Claude đạt", dat)
+    col4.metric("🟢 DeepSeek đã chấm", ds_da_cham)
+    col5.metric("🏆 DeepSeek đạt", ds_dat)
     if da_cham > 0 and ds_da_cham > 0:
         thong_nhat = sum(1 for r in records if r.get("ket_qua") == r.get("Deepseek_ket_qua"))
-        c6.metric("🤝 Thống nhất", f"{thong_nhat}/{da_cham}")
+        col6.metric("🤝 Thống nhất", f"{thong_nhat}/{da_cham}")
 
     render_threshold_info()
     st.divider()
 
-    cf1, cf2 = st.columns(2)
-    with cf1:
-        filter_status = st.selectbox("Lọc trạng thái", ["Tất cả", "Chưa chấm", "Đã chấm"])
-    with cf2:
-        filter_result = st.selectbox("Lọc kết quả Claude", ["Tất cả", "Đạt", "Không đạt"])
+    # === BỘ LỌC ===
+    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+    with col_f1:
+        filter_status = st.selectbox("🔽 Lọc trạng thái Claude", ["Tất cả", "Chưa chấm", "Đã chấm"])
+    with col_f2:
+        filter_result = st.selectbox("🏆 Lọc kết quả Claude", ["Tất cả", "Đạt", "Không đạt"])
+    with col_f3:
+        filter_ds_status = st.selectbox("🔽 Lọc trạng thái DeepSeek", ["Tất cả", "Chưa chấm", "Đã chấm"])
+    with col_f4:
+        sort_by = st.selectbox("📊 Sắp xếp theo", ["ID mới nhất", "ID cũ nhất", "Tên A-Z", "Tên Z-A", "Claude điểm cao", "DeepSeek điểm cao"])
 
-    for d in records:
-        if filter_status != "Tất cả" and d["trang_thai"] != filter_status:
-            continue
-        if filter_result != "Tất cả" and (d.get("ket_qua") or "") != filter_result:
-            continue
+    # === LỌC DỮ LIỆU ===
+    filtered_records = records.copy()
+    
+    # Lọc theo Claude
+    if filter_status != "Tất cả":
+        filtered_records = [r for r in filtered_records if r["trang_thai"] == filter_status]
+    if filter_result != "Tất cả":
+        filtered_records = [r for r in filtered_records if r.get("ket_qua") == filter_result]
+    
+    # Lọc theo DeepSeek
+    if filter_ds_status != "Tất cả":
+        filtered_records = [r for r in filtered_records if r.get("Deepseek_trang_thai") == filter_ds_status]
+    
+    # Sắp xếp
+    if sort_by == "ID mới nhất":
+        filtered_records.sort(key=lambda x: x["id"], reverse=True)
+    elif sort_by == "ID cũ nhất":
+        filtered_records.sort(key=lambda x: x["id"])
+    elif sort_by == "Tên A-Z":
+        filtered_records.sort(key=lambda x: x.get("ho_ten") or "")
+    elif sort_by == "Tên Z-A":
+        filtered_records.sort(key=lambda x: x.get("ho_ten") or "", reverse=True)
+    elif sort_by == "Claude điểm cao":
+        filtered_records.sort(key=lambda x: x.get("score_total") or 0, reverse=True)
+    elif sort_by == "DeepSeek điểm cao":
+        filtered_records.sort(key=lambda x: x.get("Deepseek_score_total") or 0, reverse=True)
 
-        claude_score  = f"{d['score_total']:.0f}/100" if d["score_total"] is not None else "Chưa chấm"
-        ds_score      = f"{d['Deepseek_score_total']:.0f}/100" if d.get("Deepseek_score_total") else "Chưa chấm"
+    st.markdown(f"**📊 Hiển thị {len(filtered_records)} / {len(records)} SKKN**")
+    st.divider()
 
-        with st.expander(
-            f"#{d['id']} | {d.get('ho_ten') or '?'} – {(d.get('ten_de_tai') or '')[:55]}… | "
-            f"Claude: {claude_score} | DeepSeek: {ds_score}",
-            expanded=False
-        ):
-            render_info_box(d)
-            tab1, tab2, tab3 = st.tabs(["🤖 Claude AI", "🟢 DeepSeek AI", "📊 So sánh & Highlight"])
+    # === BẢNG DỮ LIỆU CHÍNH ===
+    if not filtered_records:
+        st.warning("Không có SKKN nào phù hợp với bộ lọc.")
+        return
 
-            with tab1:
-                render_claude_score_cards(d)
-                render_claude_comments(d)
-                with st.expander("✏️ Chỉnh sửa điểm Claude", expanded=False):
-                    current_sm = _safe_float(d.get("score_moi")); current_sn = _safe_float(d.get("score_nhan_rong")); current_sh = _safe_float(d.get("score_hieu_qua"))
-                    col_a, col_b, col_c = st.columns(3)
-                    with col_a: new_sm = st.number_input("Tính mới", 0, 30, int(current_sm), key=f"list_edit_c_moi_{d['id']}")
-                    with col_b: new_sn = st.number_input("Áp dụng", 0, 30, int(current_sn), key=f"list_edit_c_nr_{d['id']}")
-                    with col_c: new_sh = st.number_input("Hiệu quả", 0, 40, int(current_sh), key=f"list_edit_c_hq_{d['id']}")
-                    col_save, col_reset = st.columns(2)
-                    with col_save:
-                        if st.button("💾 Lưu điểm Claude", key=f"list_save_c_{d['id']}"):
-                            save_manual_claude_scores(d["id"], new_sm, new_sn, new_sh)
-                            st.success("Đã lưu điểm Claude!"); st.rerun()
-                    with col_reset:
-                        if st.button("🔄 Reset Claude về gốc", key=f"list_reset_c_{d['id']}"):
-                            reset_claude_to_orig_scores(d["id"])
-                            st.success("Đã reset điểm Claude!"); st.rerun()
+    # Tạo dữ liệu cho bảng
+    table_data = []
+    for d in filtered_records:
+        # Claude status
+        claude_status_icon = "✅" if d["trang_thai"] == "Đã chấm" else "⏳"
+        claude_score = f"{d['score_total']:.0f}" if d["score_total"] is not None else "—"
+        claude_result = d.get("ket_qua", "—")
+        claude_result_icon = "🏆" if claude_result == "Đạt" else "❌" if claude_result == "Không đạt" else "⏳"
+        
+        # DeepSeek status
+        ds_status_icon = "✅" if d.get("Deepseek_trang_thai") == "Đã chấm" else "⏳"
+        ds_score = f"{d['Deepseek_score_total']:.0f}" if d.get("Deepseek_score_total") else "—"
+        ds_result = d.get("Deepseek_ket_qua", "—")
+        ds_result_icon = "🏆" if ds_result == "Đạt" else "❌" if ds_result == "Không đạt" else "⏳"
+        
+        # So sánh
+        if d["trang_thai"] == "Đã chấm" and d.get("Deepseek_trang_thai") == "Đã chấm":
+            same_result = "✅" if d.get("ket_qua") == d.get("Deepseek_ket_qua") else "⚠️"
+        else:
+            same_result = "⏳"
+        
+        table_data.append({
+            "ID": d["id"],
+            "Tác giả": d.get("ho_ten", "—")[:30],
+            "Đơn vị": d.get("don_vi_cong_tac", "—")[:25],
+            "Đề tài": (d.get("ten_de_tai") or "—")[:50],
+            "🤖 Claude": f"{claude_status_icon} {claude_score}",
+            "Claude KQ": f"{claude_result_icon} {claude_result}",
+            "🟢 DeepSeek": f"{ds_status_icon} {ds_score}",
+            "DeepSeek KQ": f"{ds_result_icon} {ds_result}",
+            "🔄 So sánh": same_result,
+            "Chi tiết": "🔍 Xem"
+        })
 
-            with tab2:
-                if d.get("Deepseek_trang_thai") == "Đã chấm":
-                    render_Deepseek_score_cards(d)
-                    render_Deepseek_comments(d)
-                    with st.expander("✏️ Chỉnh sửa điểm DeepSeek", expanded=False):
-                        current_sm_g = _safe_float(d.get("Deepseek_score_moi")); current_sn_g = _safe_float(d.get("Deepseek_score_nhan_rong")); current_sh_g = _safe_float(d.get("Deepseek_score_hieu_qua"))
-                        col_a, col_b, col_c = st.columns(3)
-                        with col_a: new_sm_g = st.number_input("Tính mới (DeepSeek)", 0, 30, int(current_sm_g), key=f"list_edit_g_moi_{d['id']}")
-                        with col_b: new_sn_g = st.number_input("Áp dụng (DeepSeek)", 0, 30, int(current_sn_g), key=f"list_edit_g_nr_{d['id']}")
-                        with col_c: new_sh_g = st.number_input("Hiệu quả (DeepSeek)", 0, 40, int(current_sh_g), key=f"list_edit_g_hq_{d['id']}")
-                        col_save, col_reset = st.columns(2)
-                        with col_save:
-                            if st.button("💾 Lưu điểm DeepSeek", key=f"list_save_g_{d['id']}"):
-                                save_manual_Deepseek_scores(d["id"], new_sm_g, new_sn_g, new_sh_g)
-                                st.success("Đã lưu điểm DeepSeek!"); st.rerun()
-                        with col_reset:
-                            if st.button("🔄 Reset DeepSeek về gốc", key=f"list_reset_g_{d['id']}"):
-                                reset_Deepseek_to_orig_scores(d["id"])
-                                st.success("Đã reset điểm DeepSeek!"); st.rerun()
-                else:
-                    st.info("🟢 Chưa chấm điểm bằng DeepSeek. Vào tab 'Chấm Điểm AI' để chấm.")
+    # Hiển thị bảng
+    try:
+        import pandas as pd
+        df = pd.DataFrame(table_data)
+        
+        # Cấu hình hiển thị bảng
+        st.dataframe(
+            df,
+            use_container_width=True,
+            height=500,
+            column_config={
+                "ID": st.column_config.NumberColumn("ID", width="small"),
+                "Tác giả": st.column_config.TextColumn("Tác giả", width="medium"),
+                "Đơn vị": st.column_config.TextColumn("Đơn vị", width="medium"),
+                "Đề tài": st.column_config.TextColumn("Đề tài", width="large"),
+                "🤖 Claude": st.column_config.TextColumn("Claude", width="small"),
+                "Claude KQ": st.column_config.TextColumn("KQ", width="small"),
+                "🟢 DeepSeek": st.column_config.TextColumn("DeepSeek", width="small"),
+                "DeepSeek KQ": st.column_config.TextColumn("KQ", width="small"),
+                "🔄 So sánh": st.column_config.TextColumn("So sánh", width="small"),
+                "Chi tiết": st.column_config.TextColumn("", width="small"),
+            }
+        )
+    except ImportError:
+        # Fallback nếu không có pandas
+        for d in table_data:
+            st.write(f"#{d['ID']} | {d['Tác giả']} | Claude: {d['🤖 Claude']} | DeepSeek: {d['🟢 DeepSeek']}")
 
-            with tab3:
-                render_score_comparison(d)
-                st.markdown("---")
-                st.markdown("### 🎨 Highlight AI (Claude)")
-                ai_hl = safe_load_json(d.get("ai_highlights"), [])
-                render_highlight_component(d["raw_text"], uid=f"claude_{d['id']}", ai_highlights=ai_hl, height=400)
-                if d.get("Deepseek_ai_highlights"):
-                    st.markdown("### 🎨 Highlight AI (DeepSeek)")
-                    ds_hl = safe_load_json(d.get("Deepseek_ai_highlights"), [])
-                    render_highlight_component(d["raw_text"], uid=f"ds_{d['id']}", ai_highlights=ds_hl, height=400)
-
-            xlsx_bytes = export_excel_single(d)
+    st.divider()
+    
+    # === PHẦN CHI TIẾT BÀI (khi click vào nút Xem) ===
+    st.markdown("### 📄 Chi tiết SKKN")
+    st.info("Click vào nút **🔍 Xem** bên dưới để xem chi tiết từng bài", icon="ℹ️")
+    
+    # Tạo các nút xem chi tiết
+    cols_per_row = 4
+    for i in range(0, len(filtered_records), cols_per_row):
+        cols = st.columns(cols_per_row)
+        for j, col in enumerate(cols):
+            idx = i + j
+            if idx < len(filtered_records):
+                d = filtered_records[idx]
+                with col:
+                    # Hiển thị card nhỏ cho mỗi bài
+                    claude_score = f"{d['score_total']:.0f}" if d["score_total"] else "?"
+                    ds_score = f"{d['Deepseek_score_total']:.0f}" if d.get("Deepseek_score_total") else "?"
+                    status_color = "🟢" if d.get("ket_qua") == "Đạt" else "🔴" if d.get("ket_qua") == "Không đạt" else "⚪"
+                    
+                    with st.container(border=True):
+                        st.markdown(f"**#{d['id']} - {d.get('ho_ten', '?')[:25]}**")
+                        st.caption(f"📖 {(d.get('ten_de_tai') or '')[:40]}...")
+                        st.markdown(f"🤖 Claude: **{claude_score}**/100 | 🟢 DeepSeek: **{ds_score}**/100")
+                        st.markdown(f"{status_color} Kết quả: {d.get('ket_qua', 'Chưa chấm')}")
+                        
+                        if st.button(f"🔍 Xem chi tiết #{d['id']}", key=f"card_view_{d['id']}", use_container_width=True):
+                            st.session_state["view_id"] = d["id"]
+                            st.session_state["page"] = "detail"
+                            st.rerun()
+    
+    # === XUẤT EXCEL ===
+    st.divider()
+    col_export1, col_export2, col_export3 = st.columns(3)
+    with col_export1:
+        if st.button("📥 Xuất Excel danh sách hiện tại", use_container_width=True):
+            xlsx_bytes = export_excel_summary(filtered_records)
             if xlsx_bytes:
                 st.download_button(
-                    f"📥 Xuất Excel đầy đủ – {d.get('ho_ten') or 'SKKN'}",
-                    data=xlsx_bytes, file_name=f"SKKN_{d.get('ho_ten') or d['id']}.xlsx",
+                    "📥 Tải Excel",
+                    data=xlsx_bytes,
+                    file_name=f"SKKN_DanhSach_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"dl_{d['id']}"
+                    key="export_list"
                 )
-            
-col_export1, col_export2 = st.columns(2)
-with col_export1:
-    if st.button("📥 Xuất báo cáo TẤT CẢ bài hiện tại", use_container_width=True):
-        xlsx_bytes = export_excel_detail_comments(records)
-        if xlsx_bytes:
-            st.download_button(
-                "📥 Tải Excel (Điểm + Nhận xét + Kiến nghị)",
-                data=xlsx_bytes,
-                file_name=f"SKKN_BaoCao_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="export_all_from_list"
-            )
-
-            st.divider()
-            bc1, bc2 = st.columns(2)
-            with bc1:
-                if st.button("🗑️ Xóa", key=f"del_{d['id']}"):
-                    delete_record(d["id"]); st.rerun()
-            with bc2:
-                if st.button("🔍 Chi tiết", key=f"view_{d['id']}"):
-                    st.session_state["view_id"] = d["id"]
-                    st.session_state["page"] = "detail"; st.rerun()
-
-def page_score():
-    st.subheader("🤖 Chấm Điểm Với Claude AI + DeepSeek AI")
-    st.info("Hệ thống sẽ chấm điểm bằng cả hai AI đồng thời (song song) để đảm bảo tính khách quan và tiết kiệm thời gian.", icon="🎯")
-    render_threshold_info()
-
-    col1, col2 = st.columns(2)
-    with col1:
-        claude_key   = st.text_input("🔑 Anthropic API Key (Claude)", value=ANTHROPIC_API_KEY, type="password")
-    with col2:
-        deepseek_key = st.text_input("🔑 DeepSeek API Key", value=DEEPSEEK_API_KEY, type="password")
-
-    records = get_all_records()
-
-    claude_unscored   = [d for d in records if d["trang_thai"] != "Đã chấm"]
-    ds_unscored       = [d for d in records if d.get("Deepseek_trang_thai") != "Đã chấm"]
-    claude_scored     = [d for d in records if d["trang_thai"] == "Đã chấm"]
-    ds_scored         = [d for d in records if d.get("Deepseek_trang_thai") == "Đã chấm"]
-
-    col_a, col_b, col_c, col_d = st.columns(4)
-    col_a.metric("📁 Tổng SKKN", len(records))
-    col_b.metric("🤖 Claude chưa chấm", len(claude_unscored))
-    col_c.metric("🟢 DeepSeek chưa chấm", len(ds_unscored))
-    col_d.metric("✅ Đã chấm cả 2", sum(1 for r in records if r["trang_thai"] == "Đã chấm" and r.get("Deepseek_trang_thai") == "Đã chấm"))
-
-    st.divider()
-
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "🎯 Chấm theo lựa chọn", "⚡ Chấm tất cả", "📋 Chấm nhiều bài", "🎯 Chấm từng bài"
-    ])
-
-    # ── Tab 1: Chấm theo lựa chọn ──
-    with tab1:
-        st.markdown("### 🎯 Chấm điểm theo lựa chọn")
-        selected_ai = st.radio(
-            "🤖 Chọn AI để chấm:",
-            ["Cả Claude và DeepSeek (song song)", "Chỉ Claude AI", "Chỉ DeepSeek AI"],
-            horizontal=True, key="select_ai_mode"
-        )
-        if selected_ai == "Chỉ Claude AI":
-            available = claude_unscored.copy() or claude_scored.copy()
-        elif selected_ai == "Chỉ DeepSeek AI":
-            available = ds_unscored.copy() or ds_scored.copy()
-        else:
-            available = [d for d in records if d["trang_thai"] != "Đã chấm" or d.get("Deepseek_trang_thai") != "Đã chấm"]
-
-        if not available:
-            st.success("✅ Tất cả SKKN đã được chấm!")
-        else:
-            st.info(f"📊 Có **{len(available)}** SKKN sẵn sàng")
-            record_options = {}
-            for d in available:
-                c_st = "✅" if d["trang_thai"] == "Đã chấm" else "⏳"
-                g_st = "✅" if d.get("Deepseek_trang_thai") == "Đã chấm" else "⏳"
-                key  = f"#{d['id']} – {d.get('ho_ten') or '?'} – {(d.get('ten_de_tai') or '')[:45]} [C:{c_st} G:{g_st}]"
-                record_options[key] = d
-            selected_names = st.multiselect("📋 Chọn SKKN muốn chấm:", list(record_options.keys()))
-            if selected_names:
-                sel_recs = [record_options[n] for n in selected_names]
-                st.markdown(f"**Đã chọn {len(sel_recs)} bài**")
-                if st.button(f"🚀 Chấm {len(sel_recs)} bài", type="primary", use_container_width=True):
-                    if selected_ai == "Chỉ Claude AI":
-                        if not claude_key: st.error("Vui lòng nhập API Key Claude!")
-                        else: _run_batch_scoring_claude(claude_key, sel_recs, f"{len(sel_recs)} bài (Claude)")
-                    elif selected_ai == "Chỉ DeepSeek AI":
-                        if not deepseek_key: st.error("Vui lòng nhập API Key DeepSeek!")
-                        else: _run_batch_scoring_deepseek(deepseek_key, sel_recs, f"{len(sel_recs)} bài (DeepSeek)")
-                    else:
-                        if not claude_key or not deepseek_key: st.error("Vui lòng nhập API Key cho cả Claude và DeepSeek!")
-                        else: _run_batch_scoring_both(claude_key, deepseek_key, sel_recs, f"{len(sel_recs)} bài (Song song)")
-
-    # ── Tab 2: Chấm tất cả ──
-    with tab2:
-        st.markdown("### ⚡ Chấm tất cả SKKN chưa chấm")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("🤖 Claude cần chấm", len(claude_unscored))
-        c2.metric("🟢 DeepSeek cần chấm", len(ds_unscored))
-        c3.metric("📊 Bài chưa chấm đủ 2 AI", len([d for d in records if d["trang_thai"] != "Đã chấm" or d.get("Deepseek_trang_thai") != "Đã chấm"]))
-        st.divider()
-        b1, b2, b3 = st.columns(3)
-        with b1:
-            if st.button("🚀 Chấm TẤT CẢ bằng Claude", type="primary", use_container_width=True):
-                if not claude_key: st.error("Vui lòng nhập API Key Claude!")
-                elif not claude_unscored: st.success("✅ Tất cả đã chấm bằng Claude!")
-                else: _run_batch_scoring_claude(claude_key, claude_unscored, "Tất cả SKKN (Claude)")
-        with b2:
-            if st.button("🚀 Chấm TẤT CẢ bằng DeepSeek", type="primary", use_container_width=True):
-                if not deepseek_key: st.error("Vui lòng nhập API Key DeepSeek!")
-                elif not ds_unscored: st.success("✅ Tất cả đã chấm bằng DeepSeek!")
-                else: _run_batch_scoring_deepseek(deepseek_key, ds_unscored, "Tất cả SKKN (DeepSeek)")
-        with b3:
-            if st.button("🚀 Chấm TẤT CẢ bằng CẢ HAI AI (song song)", type="primary", use_container_width=True):
-                if not claude_key or not deepseek_key: st.error("Vui lòng nhập API Key cho cả hai AI!")
-                else:
-                    both_need = [d for d in records if d["trang_thai"] != "Đã chấm" or d.get("Deepseek_trang_thai") != "Đã chấm"]
-                    if not both_need: st.success("✅ Tất cả đã chấm bằng cả hai AI!")
-                    else: _run_batch_scoring_both(claude_key, deepseek_key, both_need, f"{len(both_need)} bài (Song song)")
-
-    # ── Tab 3: Chấm nhiều bài (checkbox) ──
-    with tab3:
-        st.markdown("### 📋 Chấm nhiều bài (tích chọn checkbox)")
-        multi_ai = st.radio("🤖 Chọn AI:", ["Claude AI", "DeepSeek AI", "Cả 2 AI (song song)"], horizontal=True, key="multi_ai_choice")
-        if multi_ai == "Claude AI":
-            multi_records = claude_unscored.copy() or claude_scored.copy(); ai_name = "Claude"
-        elif multi_ai == "DeepSeek AI":
-            multi_records = ds_unscored.copy() or ds_scored.copy(); ai_name = "DeepSeek"
-        else:
-            multi_records = [d for d in records if d["trang_thai"] != "Đã chấm" or d.get("Deepseek_trang_thai") != "Đã chấm"]
-            ai_name = "cả hai AI"
-        if not multi_records:
-            st.success(f"✅ Không còn SKKN nào cần chấm bằng {ai_name}!")
-        else:
-            st.info(f"📋 {len(multi_records)} SKKN sẵn sàng chấm bằng {ai_name}")
-            selected_for_multi = []
-            for i, d in enumerate(multi_records):
-                c_st = "✅" if d["trang_thai"] == "Đã chấm" else "⏳"
-                g_st = "✅" if d.get("Deepseek_trang_thai") == "Đã chấm" else "⏳"
-                txt  = f"#{d['id']} – {d.get('ho_ten') or '?'} – {(d.get('ten_de_tai') or '')[:40]} [C:{c_st} G:{g_st}]"
-                if st.checkbox(txt, key=f"multi_check_{d['id']}_{i}"):
-                    selected_for_multi.append(d)
-            if selected_for_multi:
-                st.markdown(f"**✅ Đã chọn {len(selected_for_multi)} bài**")
-                if st.button(f"🚀 Chấm {len(selected_for_multi)} bài đã chọn", type="primary", use_container_width=True):
-                    if multi_ai == "Claude AI":
-                        if not claude_key: st.error("Vui lòng nhập API Key Claude!")
-                        else: _run_batch_scoring_claude(claude_key, selected_for_multi, f"{len(selected_for_multi)} bài (Claude)")
-                    elif multi_ai == "DeepSeek AI":
-                        if not deepseek_key: st.error("Vui lòng nhập API Key DeepSeek!")
-                        else: _run_batch_scoring_deepseek(deepseek_key, selected_for_multi, f"{len(selected_for_multi)} bài (DeepSeek)")
-                    else:
-                        if not claude_key or not deepseek_key: st.error("Vui lòng nhập API Key cho cả hai AI!")
-                        else: _run_batch_scoring_both(claude_key, deepseek_key, selected_for_multi, f"{len(selected_for_multi)} bài (Song song)")
-
-    # ── Tab 4: Chấm từng bài ──
-    with tab4:
-        st.markdown("### 🎯 Chấm từng bài riêng lẻ")
-        single_ai = st.radio("🤖 Chọn AI:", ["Claude AI", "DeepSeek AI", "Cả 2 AI (song song)"], horizontal=True, key="single_ai_choice")
-        if not records:
-            st.warning("Không có SKKN nào!")
-        else:
-            opts_single = {}
-            for d in records:
-                c_st = "✅" if d["trang_thai"] == "Đã chấm" else "⏳"
-                g_st = "✅" if d.get("Deepseek_trang_thai") == "Đã chấm" else "⏳"
-                c_sc = f"{d['score_total']:.0f}" if d["score_total"] else "?"
-                g_sc = f"{d['Deepseek_score_total']:.0f}" if d.get("Deepseek_score_total") else "?"
-                display = f"#{d['id']} – {d.get('ho_ten') or '?'} – {(d.get('ten_de_tai') or '')[:40]} [C:{c_st}({c_sc}) G:{g_st}({g_sc})]"
-                opts_single[display] = d
-            sel_display = st.selectbox("🔍 Chọn SKKN:", list(opts_single.keys()), key="single_select")
-            if sel_display:
-                sel_rec = opts_single[sel_display]
-                with st.expander("📄 Xem thông tin SKKN", expanded=False):
-                    render_info_box(sel_rec)
-                col_b1, col_b2 = st.columns(2)
-                with col_b1:
-                    if single_ai == "Claude AI":
-                        if st.button("🤖 Chấm bài này bằng Claude", type="primary", use_container_width=True):
-                            if not claude_key: st.error("Vui lòng nhập API Key Claude!")
-                            else:
-                                with st.spinner("Claude đang phân tích..."):
-                                    try:
-                                        result = score_with_claude(sel_rec["raw_text"], claude_key, sel_rec)
-                                        update_claude_score(sel_rec["id"], result)
-                                        st.success(f"✅ Claude: **{result['score_total']:.0f}/100** – {result['ket_qua']}")
-                                        time.sleep(1); st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Lỗi: {e}")
-                    elif single_ai == "DeepSeek AI":
-                        if st.button("🟢 Chấm bài này bằng DeepSeek", type="primary", use_container_width=True):
-                            if not deepseek_key: st.error("Vui lòng nhập API Key DeepSeek!")
-                            else:
-                                with st.spinner("DeepSeek đang phân tích..."):
-                                    try:
-                                        result = score_with_deepseek(sel_rec["raw_text"], deepseek_key, sel_rec)
-                                        update_Deepseek_score(sel_rec["id"], result)
-                                        st.success(f"✅ DeepSeek: **{result['score_total']:.0f}/100** – {result['ket_qua']}")
-                                        time.sleep(1); st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Lỗi: {e}")
-                    else:
-                        if st.button("🚀 Chấm bài này bằng cả 2 AI (song song)", type="primary", use_container_width=True):
-                            if not claude_key or not deepseek_key: st.error("Vui lòng nhập API Key cho cả hai AI!")
-                            else:
-                                with st.spinner("Đang chấm song song Claude + DeepSeek..."):
-                                    res = _score_one_parallel(sel_rec, claude_key, deepseek_key)
-                                    if res["claude_result"]:
-                                        update_claude_score(sel_rec["id"], res["claude_result"])
-                                        st.success(f"✅ Claude: **{res['claude_result']['score_total']:.0f}/100** – {res['claude_result']['ket_qua']}")
-                                    if res["claude_error"]: st.error(f"Claude lỗi: {res['claude_error']}")
-                                    if res["deepseek_result"]:
-                                        update_Deepseek_score(sel_rec["id"], res["deepseek_result"])
-                                        st.success(f"✅ DeepSeek: **{res['deepseek_result']['score_total']:.0f}/100** – {res['deepseek_result']['ket_qua']}")
-                                    if res["deepseek_error"]: st.error(f"DeepSeek lỗi: {res['deepseek_error']}")
-                                time.sleep(1); st.rerun()
-                with col_b2:
-                    if single_ai in ["Claude AI", "Cả 2 AI (song song)"] and sel_rec["trang_thai"] == "Đã chấm":
-                        if st.button("🔄 Chấm lại Claude", use_container_width=True):
-                            if not claude_key: st.error("Vui lòng nhập API Key Claude!")
-                            else:
-                                with st.spinner("Claude đang phân tích lại..."):
-                                    try:
-                                        result = score_with_claude(sel_rec["raw_text"], claude_key, sel_rec)
-                                        update_claude_score(sel_rec["id"], result)
-                                        st.success(f"✅ Chấm lại xong! Claude: **{result['score_total']:.0f}/100**")
-                                        time.sleep(1); st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Lỗi: {e}")
-                    if single_ai in ["DeepSeek AI", "Cả 2 AI (song song)"] and sel_rec.get("Deepseek_trang_thai") == "Đã chấm":
-                        if st.button("🔄 Chấm lại DeepSeek", use_container_width=True):
-                            if not deepseek_key: st.error("Vui lòng nhập API Key DeepSeek!")
-                            else:
-                                with st.spinner("DeepSeek đang phân tích lại..."):
-                                    try:
-                                        result = score_with_deepseek(sel_rec["raw_text"], deepseek_key, sel_rec)
-                                        update_Deepseek_score(sel_rec["id"], result)
-                                        st.success(f"✅ Chấm lại xong! DeepSeek: **{result['score_total']:.0f}/100**")
-                                        time.sleep(1); st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Lỗi: {e}")
-
+    with col_export2:
+        if st.button("📝 Xuất Excel chi tiết (kèm nhận xét)", use_container_width=True):
+            xlsx_bytes = export_excel_detail_comments(filtered_records)
+            if xlsx_bytes:
+                st.download_button(
+                    "📥 Tải Excel chi tiết",
+                    data=xlsx_bytes,
+                    file_name=f"SKKN_ChiTiet_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="export_detail"
+                )
+    with col_export3:
+        if st.button("🗑️ Xóa tất cả SKKN", use_container_width=True):
+            if st.checkbox("Xác nhận xóa TẤT CẢ?"):
+                for d in records:
+                    delete_record(d["id"])
+                st.success("Đã xóa tất cả!")
+                st.rerun()
 def page_detail():
     rid = st.session_state.get("view_id")
     if not rid:
