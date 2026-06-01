@@ -1,28 +1,49 @@
-import docx
+import streamlit as st
+import pandas as pd
+from docx import Document
 import os
-import re
 
-def clean_text(text):
-    # Loại bỏ các ký tự xuống dòng dư thừa và khoảng trắng
-    return " ".join(text.split())
+st.set_page_config(page_title="Test Filter Dữ liệu SKKN", layout="wide")
 
-def extract_info_from_doc(file_path):
-    doc = docx.Document(file_path)
-    full_text = "\n".join([p.text for p in doc.paragraphs])
+st.title("🧪 Công cụ Test Filter dữ liệu SKKN")
+
+# Nơi tải file lên
+uploaded_files = st.file_uploader("Chọn các file SKKN (.docx)", accept_multiple_files=True, type=['docx'])
+
+def extract_info(doc):
+    """Hàm trích xuất dữ liệu thô từ văn bản của file docx"""
+    full_text = "\n".join([para.text for para in doc.paragraphs])
     
-    # Sử dụng Regex để tìm tên đề tài - bất kể nó có ngoặc kép hay không
-    # Tìm đoạn văn bản sau chữ "công nhận sáng kiến:"
-    match = re.search(r"công nhận sáng kiến:\s*[""“]?([^”""]+)", full_text, re.IGNORECASE)
-    ten_de_tai = match.group(1).strip() if match else "Không tìm thấy"
-    
-    return {
-        "ten_de_tai": ten_de_tai,
-        # Bạn có thể thêm các mỏ neo khác tương tự cho Tên tác giả, Đơn vị...
+    # Logic trích xuất đơn giản (bạn có thể cải thiện bằng Regex)
+    data = {
+        "Họ và tên": "Chưa tìm thấy",
+        "Chức danh": "Chưa tìm thấy",
+        "Trình độ": "Chưa tìm thấy",
+        "Tên đề tài": "Chưa tìm thấy"
     }
+    
+    # Ví dụ tìm kiếm cơ bản
+    if "Họ và tên" in full_text or "1. Tôi ghi tên dưới đây" in full_text:
+        # Trong thực tế, bạn nên dùng regex để lấy chính xác dòng chứa tên
+        data["Họ và tên"] = "Đã phát hiện (xem file)"
+        
+    return data
 
-# Chạy cho cả thư mục
-folder_path = "D:/THCSVT/he-thong-cham-diem-skkn/SKKN-XA-LAP-VO"
-for filename in os.listdir(folder_path):
-    if filename.endswith(".docx"):
-        data = extract_info_from_doc(os.path.join(folder_path, filename))
-        print(f"File: {filename} | Tên đề tài: {data['ten_de_tai']}")
+if uploaded_files:
+    results = []
+    for file in uploaded_files:
+        doc = Document(file)
+        info = extract_info(doc)
+        info["Tên file"] = file.name
+        results.append(info)
+    
+    # Hiển thị kết quả ra bảng
+    df = pd.DataFrame(results)
+    st.subheader("Bảng dữ liệu trích xuất:")
+    st.dataframe(df, use_container_width=True)
+    
+    # Cho phép tải kết quả về
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button("Tải kết quả về CSV", csv, "ket_qua_loc.csv", "text/csv")
+else:
+    st.info("Hãy tải các file docx lên để bắt đầu kiểm tra.")
