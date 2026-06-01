@@ -2304,9 +2304,9 @@ def page_score():
 
     col1, col2 = st.columns(2)
     with col1:
-        claude_key = st.text_input("🔑 Anthropic API Key (Claude)", value=ANTHROPIC_API_KEY, type="password")
+        claude_key = st.text_input("🔑 Anthropic API Key (Claude)", value=ANTHROPIC_API_KEY, type="password", key="claude_key_input")
     with col2:
-        deepseek_key = st.text_input("🔑 DeepSeek API Key", value=DEEPSEEK_API_KEY, type="password")
+        deepseek_key = st.text_input("🔑 DeepSeek API Key", value=DEEPSEEK_API_KEY, type="password", key="deepseek_key_input")
 
     records = get_all_records()
 
@@ -2333,7 +2333,8 @@ def page_score():
         selected_ai = st.radio(
             "🤖 Chọn AI để chấm:",
             ["Cả Claude và DeepSeek (song song)", "Chỉ Claude AI", "Chỉ DeepSeek AI"],
-            horizontal=True, key="select_ai_mode"
+            horizontal=True, 
+            key="select_ai_mode_tab1"  # <--- THÊM KEY DUY NHẤT
         )
         
         if selected_ai == "Chỉ Claude AI":
@@ -2353,11 +2354,11 @@ def page_score():
             
             # Tạo checkbox cho từng bài
             selected_for_multi = []
-            for i, d in enumerate(available[:20]):  # Giới hạn 20 bài để tránh lag
+            for i, d in enumerate(available[:20]):
                 c_st = "✅" if d["trang_thai"] == "Đã chấm" else "⏳"
                 g_st = "✅" if d.get("Deepseek_trang_thai") == "Đã chấm" else "⏳"
                 display = f"#{d['id']} – {d.get('ho_ten') or '?'} – {(d.get('ten_de_tai') or '')[:45]} [C:{c_st} G:{g_st}]"
-                if st.checkbox(display, key=f"select_{d['id']}"):
+                if st.checkbox(display, key=f"select_tab1_{d['id']}"):
                     selected_for_multi.append(d)
             
             if len(available) > 20:
@@ -2365,7 +2366,7 @@ def page_score():
             
             if selected_for_multi:
                 st.markdown(f"**✅ Đã chọn {len(selected_for_multi)} bài**")
-                if st.button(f"🚀 Chấm {len(selected_for_multi)} bài", type="primary"):
+                if st.button(f"🚀 Chấm {len(selected_for_multi)} bài", type="primary", key="btn_chon_tab1"):
                     if selected_ai == "Chỉ Claude AI":
                         if not claude_key:
                             st.error("Vui lòng nhập API Key Claude!")
@@ -2393,7 +2394,7 @@ def page_score():
         
         col_btn1, col_btn2, col_btn3 = st.columns(3)
         with col_btn1:
-            if st.button("🚀 Chấm TẤT CẢ bằng Claude", type="primary"):
+            if st.button("🚀 Chấm TẤT CẢ bằng Claude", type="primary", key="btn_all_claude"):
                 if not claude_key:
                     st.error("Vui lòng nhập API Key Claude!")
                 elif not claude_unscored:
@@ -2401,7 +2402,7 @@ def page_score():
                 else:
                     _run_batch_scoring_claude(claude_key, claude_unscored, "Tất cả SKKN (Claude)")
         with col_btn2:
-            if st.button("🚀 Chấm TẤT CẢ bằng DeepSeek", type="primary"):
+            if st.button("🚀 Chấm TẤT CẢ bằng DeepSeek", type="primary", key="btn_all_deepseek"):
                 if not deepseek_key:
                     st.error("Vui lòng nhập API Key DeepSeek!")
                 elif not ds_unscored:
@@ -2409,7 +2410,7 @@ def page_score():
                 else:
                     _run_batch_scoring_deepseek(deepseek_key, ds_unscored, "Tất cả SKKN (DeepSeek)")
         with col_btn3:
-            if st.button("🚀 Chấm TẤT CẢ bằng CẢ HAI AI", type="primary"):
+            if st.button("🚀 Chấm TẤT CẢ bằng CẢ HAI AI", type="primary", key="btn_all_both"):
                 if not claude_key or not deepseek_key:
                     st.error("Vui lòng nhập API Key cho cả hai AI!")
                 else:
@@ -2422,7 +2423,12 @@ def page_score():
     # Tab 3: Chấm nhiều bài (checkbox đơn giản)
     with tab3:
         st.markdown("### 📋 Chấm nhiều bài")
-        multi_ai = st.radio("🤖 Chọn AI:", ["Claude AI", "DeepSeek AI", "Cả 2 AI (song song)"], horizontal=True)
+        multi_ai = st.radio(
+            "🤖 Chọn AI:", 
+            ["Claude AI", "DeepSeek AI", "Cả 2 AI (song song)"], 
+            horizontal=True,
+            key="multi_ai_tab3"  # <--- THÊM KEY DUY NHẤT
+        )
         
         if multi_ai == "Claude AI":
             multi_records = claude_unscored.copy() or claude_scored.copy()
@@ -2438,9 +2444,9 @@ def page_score():
             for d in multi_records[:15]:
                 c_st = "✅" if d["trang_thai"] == "Đã chấm" else "⏳"
                 g_st = "✅" if d.get("Deepseek_trang_thai") == "Đã chấm" else "⏳"
-                if st.checkbox(f"#{d['id']} – {d.get('ho_ten', '?')} [C:{c_st} G:{g_st}]", key=f"multi_{d['id']}"):
+                if st.checkbox(f"#{d['id']} – {d.get('ho_ten', '?')} [C:{c_st} G:{g_st}]", key=f"multi_tab3_{d['id']}"):
                     selected.append(d)
-            if selected and st.button("🚀 Chấm bài đã chọn", type="primary"):
+            if selected and st.button("🚀 Chấm bài đã chọn", type="primary", key="btn_multi_tab3"):
                 if multi_ai == "Claude AI":
                     _run_batch_scoring_claude(claude_key, selected, f"{len(selected)} bài")
                 elif multi_ai == "DeepSeek AI":
@@ -2451,7 +2457,12 @@ def page_score():
     # Tab 4: Chấm từng bài
     with tab4:
         st.markdown("### 🎯 Chấm từng bài riêng lẻ")
-        single_ai = st.radio("🤖 Chọn AI:", ["Claude AI", "DeepSeek AI", "Cả 2 AI (song song)"], horizontal=True)
+        single_ai = st.radio(
+            "🤖 Chọn AI:", 
+            ["Claude AI", "DeepSeek AI", "Cả 2 AI (song song)"], 
+            horizontal=True,
+            key="single_ai_tab4"  # <--- THÊM KEY DUY NHẤT
+        )
         
         if records:
             opts = {}
@@ -2462,13 +2473,13 @@ def page_score():
                 g_score = f"{d['Deepseek_score_total']:.0f}" if d.get("Deepseek_score_total") else "?"
                 opts[f"#{d['id']} – {d.get('ho_ten', '?')} [C:{c_st}({c_score}) G:{g_st}({g_score})]"] = d
             
-            selected = st.selectbox("🔍 Chọn SKKN:", list(opts.keys()))
+            selected = st.selectbox("🔍 Chọn SKKN:", list(opts.keys()), key="select_single_tab4")
             if selected:
                 d = opts[selected]
                 with st.expander("📄 Xem thông tin SKKN", expanded=False):
                     render_info_box(d)
                 
-                if st.button("🚀 Chấm bài này", type="primary"):
+                if st.button("🚀 Chấm bài này", type="primary", key="btn_single_tab4"):
                     if single_ai == "Claude AI":
                         if not claude_key:
                             st.error("Vui lòng nhập API Key Claude!")
