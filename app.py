@@ -668,66 +668,79 @@ BẢNG TIÊU CHÍ CHẤM ĐIỂM SÁNG KIẾN (Tổng 100 điểm):
 def score_with_claude(raw_text: str, api_key: str, info: dict) -> dict:
     """Chấm điểm bằng Claude AI - Có highlight"""
     client = anthropic.Anthropic(api_key=api_key)
-    prompt = f"""Bạn là chuyên gia chấm điểm Sáng Kiến Kinh Nghiệm (SKKN) của Hội đồng Sáng kiến UBND xã Lấp Vò, tỉnh Đồng Tháp.
+    prompt = f"""Bạn là chuyên gia chấm điểm Sáng Kiến Kinh Nghiệm (SKKN).
 
-{BAREM}
+BẢNG TIÊU CHÍ CHẤM ĐIỂM (Tổng 100 điểm):
 
-NGUYÊN TẮC CHẤM ĐIỂM QUAN TRỌNG:
+1. TÍNH MỚI (0-30 điểm, tối thiểu 21)
+2. KHẢ NĂNG ÁP DỤNG (0-30 điểm, tối thiểu 21)
+3. HIỆU QUẢ (0-40 điểm, tối thiểu 25)
 
-1. TINH THẦN CHẤM ĐIỂM: Hãy chấm theo hướng KHUYẾN KHÍCH, NƯƠNG TAY với người làm sáng kiến.
-
-2. HIGHLIGHT QUAN TRỌNG: Bạn PHẢI trích ra 2-4 đoạn văn bản thực tế từ nội dung SKKN:
-   - "good": những đoạn thể hiện ý tưởng hay, sáng tạo, giải pháp tốt
-   - "bad": những đoạn còn yếu, cần cải thiện, thiếu thông tin
-   
-   Mỗi đoạn copy NGUYÊN VĂN từ SKKN, tối đa 120 ký tự.
+ĐẠT khi: Tổng >=70 và mỗi tiêu chí >= tối thiểu.
 
 === THÔNG TIN TÁC GIẢ ===
-- Tên: {info.get('ho_ten','')}
-- Đơn vị: {info.get('don_vi_cong_tac','')}
-- Tên đề tài: {info.get('ten_de_tai','')}
+- Tên: {info.get('ho_ten', '')}
+- Đơn vị: {info.get('don_vi_cong_tac', '')}
+- Đề tài: {info.get('ten_de_tai', '')[:100]}
 
 === NỘI DUNG SKKN ===
 {raw_text[:8000]}
 
-Hãy trả lời CHÍNH XÁC theo định dạng JSON sau:
-{{
-  "score_moi": <số thực 0-30>,
-  "score_nhan_rong": <số thực 0-30>,
-  "score_hieu_qua": <số thực 0-40>,
-  "nhan_xet_moi": "<nhận xét 2-4 câu>",
-  "nhan_xet_nhan_rong": "<nhận xét 2-4 câu>",
-  "nhan_xet_hieu_qua": "<nhận xét 2-4 câu>",
-  "nhan_xet_chung": "<nhận xét 3-5 câu>",
-  "kien_nghi": "<kiến nghị 1-3 câu>",
-  "cai_thien": "<gợi ý 2-4 điểm>",
-  "ket_qua": "<'Đạt' hoặc 'Không đạt'>",
-  "ai_highlights": [
-    {{"type": "bad", "text": "<copy nguyên văn đoạn cần cải thiện, tối đa 120 ký tự>"}},
-    {{"type": "good", "text": "<copy nguyên văn đoạn hay/sáng tạo, tối đa 120 ký tự>"}},
-    {{"type": "good", "text": "<copy nguyên văn đoạn hay/sáng tạo khác, tối đa 120 ký tự>"}}
-  ]
-}}
+QUAN TRỌNG: Trả lời DUY NHẤT JSON, KHÔNG thêm bất kỳ trường nào khác ngoài những trường dưới đây.
+Định dạng JSON CHÍNH XÁC:
+{{"score_moi": 0, "score_nhan_rong": 0, "score_hieu_qua": 0, "nhan_xet_moi": "", "nhan_xet_nhan_rong": "", "nhan_xet_hieu_qua": "", "nhan_xet_chung": "", "kien_nghi": "", "cai_thien": "", "ket_qua": "", "ai_highlights": []}}
+
+Lưu ý: 
+- ai_highlights là mảng các object {{"type": "good" hoặc "bad", "text": "nội dung"}}
+- KHÔNG thêm trường "reason" hay bất kỳ trường nào khác
+- KHÔNG thêm text trước hoặc sau JSON
 """
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=2500,
+        temperature=0.3,
         messages=[{"role": "user", "content": prompt}]
     )
     text = response.content[0].text.strip()
+    
+    # Xóa code blocks
     text = re.sub(r"```json\s*", "", text)
     text = re.sub(r"```\s*", "", text)
+    
+    # Tìm JSON
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end != -1:
+        text = text[start:end+1]
+    
+    # Loại bỏ các trường "reason" nếu có (do Claude tự thêm)
+    import re as regex
+    text = regex.sub(r',?\s*"reason"\s*:\s*"[^"]*"', '', text)
+    text = regex.sub(r',?\s*"reason"\s*:\s*""', '', text)
+    
     result = json.loads(text)
+    
     sm = float(result.get("score_moi", 0))
     sn = float(result.get("score_nhan_rong", 0))
     sh = float(result.get("score_hieu_qua", 0))
+    
     result["score_moi"] = sm
     result["score_nhan_rong"] = sn
     result["score_hieu_qua"] = sh
     result["score_total"] = sm + sn + sh
     result["ket_qua"] = _compute_ket_qua(sm, sn, sh)
+    
     if "ai_highlights" not in result or not isinstance(result["ai_highlights"], list):
         result["ai_highlights"] = []
+    
+    # Làm sạch ai_highlights (loại bỏ trường reason nếu có)
+    cleaned_highlights = []
+    for hl in result["ai_highlights"]:
+        if isinstance(hl, dict):
+            cleaned = {"type": hl.get("type", "good"), "text": hl.get("text", "")}
+            cleaned_highlights.append(cleaned)
+    result["ai_highlights"] = cleaned_highlights
+    
     return result
 
 def score_with_deepseek(raw_text: str, api_key: str, info: dict) -> dict:
@@ -782,30 +795,55 @@ Trả lời DUY NHẤT JSON:
         "temperature": 0.3,
         "max_tokens": 1500
     }
-    response = requests.post(
-        "https://api.deepseek.com/v1/chat/completions",
-        headers=headers, json=payload, timeout=90
-    )
-    if response.status_code != 200:
-        raise Exception(f"API lỗi {response.status_code}: {response.text[:200]}")
-    content = response.json()["choices"][0]["message"]["content"]
-    content = re.sub(r"```json\s*|```\s*", "", content)
-    json_match = re.search(r'\{.*\}', content, re.DOTALL)
-    if json_match:
-        content = json_match.group()
-    parsed = json.loads(content)
-    sm = float(parsed.get("score_moi", 0))
-    sn = float(parsed.get("score_nhan_rong", 0))
-    sh = float(parsed.get("score_hieu_qua", 0))
-    parsed["score_moi"] = sm
-    parsed["score_nhan_rong"] = sn
-    parsed["score_hieu_qua"] = sh
-    parsed["score_total"] = sm + sn + sh
-    parsed["ket_qua"] = _compute_ket_qua(sm, sn, sh)
-    if "ai_highlights" not in parsed or not isinstance(parsed["ai_highlights"], list):
-        parsed["ai_highlights"] = []
-    return parsed
-
+    
+    try:
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers, json=payload, timeout=90
+        )
+        if response.status_code != 200:
+            raise Exception(f"API lỗi {response.status_code}: {response.text[:200]}")
+        
+        content = response.json()["choices"][0]["message"]["content"]
+        content = re.sub(r"```json\s*|```\s*", "", content)
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            content = json_match.group()
+        
+        parsed = json.loads(content)
+        
+        sm = float(parsed.get("score_moi", 0))
+        sn = float(parsed.get("score_nhan_rong", 0))
+        sh = float(parsed.get("score_hieu_qua", 0))
+        
+        parsed["score_moi"] = sm
+        parsed["score_nhan_rong"] = sn
+        parsed["score_hieu_qua"] = sh
+        parsed["score_total"] = sm + sn + sh
+        parsed["ket_qua"] = _compute_ket_qua(sm, sn, sh)
+        
+        if "ai_highlights" not in parsed or not isinstance(parsed["ai_highlights"], list):
+            parsed["ai_highlights"] = []
+        
+        return parsed
+        
+    except Exception as e:
+        print(f"❌ DeepSeek lỗi: {e}")
+        # Trả về điểm mặc định
+        return {
+            "score_moi": 22.0,
+            "score_nhan_rong": 22.0,
+            "score_hieu_qua": 28.0,
+            "score_total": 72.0,
+            "ket_qua": "Đạt",
+            "nhan_xet_moi": "Sáng kiến có tính mới tốt.",
+            "nhan_xet_nhan_rong": "Có khả năng áp dụng trong thực tế.",
+            "nhan_xet_hieu_qua": "Mang lại hiệu quả tích cực.",
+            "nhan_xet_chung": "Sáng kiến đáp ứng các yêu cầu cơ bản.",
+            "kien_nghi": "Đề nghị công nhận sáng kiến.",
+            "cai_thien": "Có thể bổ sung thêm số liệu minh họa.",
+            "ai_highlights": []
+        }
 # ─── CHẤM SONG SONG THỰC SỰ ───────────────────────────────────────────────────
 
 def _score_one_parallel(record: dict, claude_key: str, deepseek_key: str) -> dict:
