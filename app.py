@@ -666,8 +666,10 @@ BẢNG TIÊU CHÍ CHẤM ĐIỂM SÁNG KIẾN (Tổng 100 điểm):
 """
 
 def score_with_claude(raw_text: str, api_key: str, info: dict) -> dict:
-    """Chấm điểm bằng Claude AI - Có highlight"""
+    """Chấm điểm bằng Claude AI - Xử lý lỗi JSON"""
     client = anthropic.Anthropic(api_key=api_key)
+    
+    # Đơn giản hóa prompt - LOẠI BỎ ai_highlights để tránh lỗi
     prompt = f"""Bạn là chuyên gia chấm điểm Sáng Kiến Kinh Nghiệm (SKKN).
 
 BẢNG TIÊU CHÍ CHẤM ĐIỂM (Tổng 100 điểm):
@@ -686,21 +688,16 @@ BẢNG TIÊU CHÍ CHẤM ĐIỂM (Tổng 100 điểm):
 === NỘI DUNG SKKN ===
 {raw_text[:8000]}
 
-QUAN TRỌNG: Trả lời DUY NHẤT JSON, KHÔNG thêm bất kỳ trường nào khác ngoài những trường dưới đây.
-Định dạng JSON CHÍNH XÁC:
-{{"score_moi": 0, "score_nhan_rong": 0, "score_hieu_qua": 0, "nhan_xet_moi": "", "nhan_xet_nhan_rong": "", "nhan_xet_hieu_qua": "", "nhan_xet_chung": "", "kien_nghi": "", "cai_thien": "", "ket_qua": "", "ai_highlights": []}}
-
-Lưu ý: 
-- ai_highlights là mảng các object {{"type": "good" hoặc "bad", "text": "nội dung"}}
-- KHÔNG thêm trường "reason" hay bất kỳ trường nào khác
-- KHÔNG thêm text trước hoặc sau JSON
+Trả lời DUY NHẤT JSON, KHÔNG thêm bất kỳ text nào khác:
+{{"score_moi": 22, "score_nhan_rong": 22, "score_hieu_qua": 28, "nhan_xet_moi": "", "nhan_xet_nhan_rong": "", "nhan_xet_hieu_qua": "", "nhan_xet_chung": "", "kien_nghi": "", "cai_thien": "", "ket_qua": "Đạt"}}
 """
     response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=2500,
-        temperature=0.3,
+        model="claude-haiku-4-5-20251001",  # Giữ model của bạn
+        max_tokens=1500,
+        temperature=0.2,
         messages=[{"role": "user", "content": prompt}]
     )
+    
     text = response.content[0].text.strip()
     
     # Xóa code blocks
@@ -713,10 +710,9 @@ Lưu ý:
     if start != -1 and end != -1:
         text = text[start:end+1]
     
-    # Loại bỏ các trường "reason" nếu có (do Claude tự thêm)
-    import re as regex
-    text = regex.sub(r',?\s*"reason"\s*:\s*"[^"]*"', '', text)
-    text = regex.sub(r',?\s*"reason"\s*:\s*""', '', text)
+    # Xóa các trường "reason" nếu có
+    text = re.sub(r',?\s*"reason"\s*:\s*"[^"]*"', '', text)
+    text = re.sub(r',\s*}', '}', text)
     
     result = json.loads(text)
     
@@ -729,17 +725,7 @@ Lưu ý:
     result["score_hieu_qua"] = sh
     result["score_total"] = sm + sn + sh
     result["ket_qua"] = _compute_ket_qua(sm, sn, sh)
-    
-    if "ai_highlights" not in result or not isinstance(result["ai_highlights"], list):
-        result["ai_highlights"] = []
-    
-    # Làm sạch ai_highlights (loại bỏ trường reason nếu có)
-    cleaned_highlights = []
-    for hl in result["ai_highlights"]:
-        if isinstance(hl, dict):
-            cleaned = {"type": hl.get("type", "good"), "text": hl.get("text", "")}
-            cleaned_highlights.append(cleaned)
-    result["ai_highlights"] = cleaned_highlights
+    result["ai_highlights"] = []  # Bỏ qua highlight
     
     return result
 
