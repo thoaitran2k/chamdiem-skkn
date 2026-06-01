@@ -931,34 +931,73 @@ def _run_batch_scoring_both(claude_key: str, deepseek_key: str, records: list, l
     st.rerun()
 
 def _run_batch_scoring_claude(api_key: str, records: list, label: str):
-    """Chấm hàng loạt chỉ Claude"""
+    """Chấm hàng loạt chỉ Claude - Tự động thử lại bài bị lỗi"""
+    import traceback
+    
+    if not api_key:
+        st.error("❌ Vui lòng nhập API Key cho Claude!")
+        return
+    
     progress = st.progress(0)
-    status   = st.empty()
-    log_box  = st.empty()
-    errors   = []
+    status = st.empty()
+    log_box = st.empty()
+    errors = []
+    success_count = 0
     log_lines = []
+    
+    total = len(records)
+    
     for i, d in enumerate(records):
         short = (d.get("ten_de_tai") or "")[:40]
-        status.info(f"⏳ Claude đang chấm ({i+1}/{len(records)}): **{d.get('ho_ten','?')}** – {short}…")
-        try:
-            result = score_with_claude(d["raw_text"], api_key, d)
+        status.info(f"⏳ Claude đang chấm ({i+1}/{total}): **{d.get('ho_ten','?')}** – {short}…")
+        
+        # Thử chấm tối đa 2 lần nếu lỗi
+        max_retries = 2
+        result = None
+        error_msg = None
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"\n🟢 Đang chấm ID {d['id']} (lần {attempt+1}): {d.get('ho_ten')}")
+                result = score_with_claude(d["raw_text"], api_key, d)
+                if result:
+                    break
+            except Exception as e:
+                error_msg = str(e)
+                print(f"⚠️ Lỗi lần {attempt+1} ID {d['id']}: {error_msg}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)  # Chờ 2 giây rồi thử lại
+        
+        if result:
             update_claude_score(d["id"], result)
             ket = result.get("ket_qua", "?")
-            total = result.get("score_total", 0)
+            total_score = result.get("score_total", 0)
             icon = "✅" if ket == "Đạt" else "❌"
-            log_lines.append(f"{icon} #{d['id']} {d.get('ho_ten','?')} → **{total:.0f}/100** ({ket})")
-        except Exception as e:
-            errors.append(f"ID #{d['id']}: {str(e)[:120]}")
-            log_lines.append(f"⚠️ #{d['id']} {d.get('ho_ten','?')} → Lỗi")
-        log_box.markdown("\n\n".join(log_lines[-8:]))
-        progress.progress((i+1)/len(records))
-        time.sleep(0.3)
-    status.empty(); log_box.empty(); progress.empty()
+            success_count += 1
+            log_lines.append(f"{icon} #{d['id']} {d.get('ho_ten','?')} → **{total_score:.0f}/100** ({ket})")
+            print(f"✅ Thành công ID {d['id']}: {total_score} điểm - {ket}")
+        else:
+            errors.append(f"ID #{d['id']} ({d.get('ho_ten','?')}): {error_msg[:150]}")
+            log_lines.append(f"⚠️ #{d['id']} {d.get('ho_ten','?')} → **LỖI**: {error_msg[:80]}")
+            print(f"❌ Lỗi ID {d['id']} sau {max_retries} lần thử: {error_msg}")
+        
+        log_box.markdown("\n\n".join(log_lines[-10:]))
+        progress.progress((i+1)/total)
+        time.sleep(0.5)
+    
+    status.empty()
+    log_box.empty()
+    progress.empty()
+    
     if errors:
-        st.warning(f"Hoàn tất **{label}** với {len(errors)} lỗi:")
-        for err in errors: st.error(err)
+        st.warning(f"⚠️ Hoàn tất **{label}** với {len(errors)} lỗi trên {total} bài:")
+        with st.expander(f"Xem chi tiết {len(errors)} lỗi"):
+            for err in errors[:15]:
+                st.error(err)
     else:
-        st.success(f"✅ Hoàn tất {label}: đã chấm **{len(records)}** SKKN bằng Claude!")
+        st.balloons()
+        st.success(f"✅ HOÀN TẤT! Đã chấm thành công **{success_count}/{total}** SKKN bằng Claude!")
+    
     st.rerun()
 
 def _run_batch_scoring_deepseek(api_key: str, records: list, label: str):
